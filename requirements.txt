@@ -1,0 +1,22 @@
+# 核心深度学习库
+torch>=2.1.0
+torchvision>=0.16.0
+
+# 模型加载 (4.44.2 完美支持 Qwen2-VL 和 CLIP)
+transformers==4.44.2
+accelerate>=0.30.0
+timm>=0.9.0
+
+# 向量检索
+faiss-gpu>=1.7.4
+
+# 🚨 关键：严格锁定 Web 框架版本，避免破坏性更新和依赖冲突
+gradio==4.44.1
+huggingface_hub==0.24.7
+pydantic==2.8.2
+fastapi==0.112.2
+
+# 其他工具
+pillow>=10.0.0
+numpy>=1.24.0
+modelscope>=1.14.0

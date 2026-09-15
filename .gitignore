@@ -1,0 +1,28 @@
+# 忽略所有模型权重文件
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.h5
+*.msgpack
+
+# 忽略模型文件夹和数据缓存
+models/
+data/cache/
+data/index/
+data/results/
+tmp/
+
+# 忽略 Python 缓存和虚拟环境
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+
+# 忽略 Jupyter 检查点
+.ipynb_checkpoints/
+
+# 忽略系统文件
+.DS_Store
+Thumbs.db
