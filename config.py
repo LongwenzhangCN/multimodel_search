@@ -4,10 +4,23 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEVICE = "cuda"
 
 
-# ========== Qwen 配置 ==========
-# 直接指向包含 config.json 和 model-*.safetensors 的目录
-QWEN_MODEL_PATH = "/root/autodl-tmp/models/qwen/Qwen2-VL-7B-Instruct"
+# ========== Qwen 模型配置 ==========
+QWEN_MODEL_BASE_DIR = "/root/autodl-tmp/models"
 
+QWEN_MODELS = {
+    "qwen2_vl_7b": {
+        "path": "/root/autodl-tmp/models/qwen/Qwen2-VL-7B-Instruct",  # 你之前的模型
+        "display_name": "Qwen2-VL-7B",
+        "model_class": "Qwen2VLForConditionalGeneration",
+    },
+    "qwen3_vl_8b": {  # 新增这个
+        "path": "/root/autodl-tmp/models/Qwen3-VL-8B-Instruct",
+        "display_name": "Qwen3-VL-8B",
+        "model_class": "Qwen3VLForConditionalGeneration",
+    }
+}
+
+DEFAULT_QWEN_MODEL = "qwen2_vl_7b"  # 默认使用旧模型，启动后再切换
 # ========== 模型本地路径配置 ==========
 # ️ 请确保运行 download_models.py 后，这些路径真实存在
 MODEL_BASE_DIR = "/root/autodl-tmp/multimodal_search/models"

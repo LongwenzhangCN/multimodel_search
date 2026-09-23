@@ -1,27 +1,60 @@
 import torch
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import AutoProcessor
 from PIL import Image
 import os
 import sys
 import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import QWEN_MODEL_PATH, DEVICE
+from config import QWEN_MODELS, DEFAULT_QWEN_MODEL, DEVICE
 
 class QwenJudgeEncoder:
-    def __init__(self):
+    def __init__(self, model_key=None):
         self.device = DEVICE
-        print(f"🚀 正在加载 Qwen2-VL 判别模型: {QWEN_MODEL_PATH}")
+        self.model_key = model_key or DEFAULT_QWEN_MODEL
         
-        self.processor = AutoProcessor.from_pretrained(QWEN_MODEL_PATH, trust_remote_code=True)
-        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-            QWEN_MODEL_PATH,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True
-        )
+        if self.model_key not in QWEN_MODELS:
+            raise ValueError(f"未知的模型密钥: {self.model_key}. 可用的模型: {list(QWEN_MODELS.keys())}")
+        
+        model_config = QWEN_MODELS[self.model_key]
+        model_path = model_config["path"]
+        model_class_name = model_config["model_class"]
+        
+        print(f"🚀 正在加载 {model_config['display_name']}: {model_path}")
+        
+        # 动态导入模型类
+        if model_class_name == "Qwen2VLForConditionalGeneration":
+            from transformers import Qwen2VLForConditionalGeneration
+            ModelClass = Qwen2VLForConditionalGeneration
+        elif model_class_name == "Qwen3VLForConditionalGeneration":
+            from transformers import Qwen3VLForConditionalGeneration
+            ModelClass = Qwen3VLForConditionalGeneration
+        else:
+            raise ValueError(f"不支持的模型类: {model_class_name}")
+        
+        # 加载处理器和模型
+        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        
+        # 根据模型大小选择加载策略
+        if "8b" in self.model_key.lower():
+            # 8B 模型使用 device_map="auto" 和 float16
+            self.model = ModelClass.from_pretrained(
+                model_path,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                trust_remote_code=True
+            )
+        else:
+            # 7B 和 4B 模型直接加载
+            self.model = ModelClass.from_pretrained(
+                model_path,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                trust_remote_code=True
+            )
+        
         self.model.eval()
-        print("✅ Qwen2-VL 判别模型加载完成！")
+        print(f"✅ {model_config['display_name']} 加载完成！")
 
     @torch.no_grad()
     def judge_single_image(self, image, description):
@@ -59,34 +92,6 @@ class QwenJudgeEncoder:
             )
         return self._run_inference([query_image, target_image], prompt)
 
-    @torch.no_grad()
-    def batch_judge_with_reference(self, reference_image, description, target_images, progress_callback=None):
-        """
-        批量判别：使用参考图+描述，判断目标图片是否符合要求
-        
-        Args:
-            reference_image: 参考图片 (PIL.Image)
-            description: 文字描述
-            target_images: 目标图片路径列表
-            progress_callback: 进度回调函数
-            
-        Returns:
-            List[Tuple[str, dict]]: [(图片路径, 判别结果), ...]
-        """
-        results = []
-        
-        for i, img_path in enumerate(target_images):
-            if progress_callback:
-                progress_callback(i + 1, len(target_images))
-            
-            try:
-                target_image = Image.open(img_path).convert('RGB')
-                result = self.judge_image_match(reference_image, target_image, description)
-                results.append((img_path, result))
-            except Exception as e:
-                results.append((img_path, {"match": False, "error": str(e)}))
-        
-        return results
     def _run_inference(self, images, prompt):
         """执行推理并解析结果"""
         messages = [
@@ -127,6 +132,6 @@ class QwenJudgeEncoder:
         # 3. 提取理由
         match = re.search(r"理由[：:]\s*(.*)", response, re.DOTALL)
         if match:
-            result["reason"] = match.group(1).strip().split('\n')[0] # 只取第一行
+            result["reason"] = match.group(1).strip().split('\n')[0]
             
         return result

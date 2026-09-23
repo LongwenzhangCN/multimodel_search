@@ -27,7 +27,6 @@ class ModelManager:
             print(f"✅ 模型 {model_config['display_name']} 已在显存中")
             return self.loaded_models[model_key]
         
-        # 1. 校验路径
         self._check_path(model_key, model_config)
         print(f" 正在从本地加载 {model_config['display_name']}...")
         
@@ -50,25 +49,24 @@ class ModelManager:
                     model.eval()
                     encoder = DINOv3ConvNeXtEncoder(model)
             
-            # 保存到缓存字典
             self.loaded_models[model_key] = encoder
             print(f"✅ {model_config['display_name']} 本地加载完成！")
             return encoder
         
         except Exception as e:
             print(f"❌ 加载失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_encoder(self, model_key):
-        """获取已加载的编码器 (修复报错的关键方法)"""
         return self.loaded_models.get(model_key)
     
     def unload_model(self, model_key):
-        """卸载模型以释放显存"""
         if model_key in self.loaded_models:
             del self.loaded_models[model_key]
             torch.cuda.empty_cache()
-            print(f"️ 模型 {model_key} 已卸载，显存已释放")
+            print(f"🗑️ 模型 {model_key} 已卸载，显存已释放")
 
 
 # ========== 编码器实现 ==========
@@ -78,16 +76,50 @@ class CLIPEncoder:
         self.model = model
         self.processor = processor
     
+    def _ensure_tensor(self, feat):
+        """确保返回的是纯 Tensor，兼容各种 transformers 版本"""
+        if isinstance(feat, torch.Tensor):
+            return feat
+        # 如果是 Output 对象，尝试提取
+        if hasattr(feat, 'image_embeds'): return feat.image_embeds
+        if hasattr(feat, 'text_embeds'): return feat.text_embeds
+        if hasattr(feat, 'pooler_output'): return feat.pooler_output
+        if hasattr(feat, 'last_hidden_state'): return feat.last_hidden_state[:, 0, :]
+        return feat[0]
+
     @torch.no_grad()
     def encode_image(self, image_path):
         inputs = self.processor(images=Image.open(image_path).convert('RGB'), return_tensors="pt", padding=True).to(DEVICE)
-        feat = self.model.get_image_features(**inputs)
+        
+        try:
+            # 优先使用标准方法
+            feat = self.model.get_image_features(**inputs)
+        except Exception:
+            # 兜底方案：直接调用 vision_model 并手动投影
+            vision_outputs = self.model.vision_model(**inputs)
+            pooled_output = vision_outputs[1]  # pooler_output
+            feat = self.model.visual_projection(pooled_output)
+            
+        feat = self._ensure_tensor(feat)
         return (feat / feat.norm(dim=-1, keepdim=True))[0].cpu().numpy()
     
     @torch.no_grad()
     def encode_text(self, text):
         inputs = self.processor(text=text, return_tensors="pt", padding=True).to(DEVICE)
-        feat = self.model.get_text_features(**inputs)
+        
+        # 关键修复：只保留文本相关的参数，防止模型 forward 时因为缺少 pixel_values 报错
+        text_inputs = {k: v for k, v in inputs.items() if k in ['input_ids', 'attention_mask']}
+        
+        try:
+            # 优先使用标准方法
+            feat = self.model.get_text_features(**text_inputs)
+        except Exception:
+            # 兜底方案：直接调用 text_model 并手动投影
+            text_outputs = self.model.text_model(**text_inputs)
+            pooled_output = text_outputs[1]  # pooler_output
+            feat = self.model.text_projection(pooled_output)
+            
+        feat = self._ensure_tensor(feat)
         return (feat / feat.norm(dim=-1, keepdim=True))[0].cpu().numpy()
 
 
@@ -116,6 +148,18 @@ class DINOv3ConvNeXtEncoder:
     
     @torch.no_grad()
     def encode_image(self, image_path):
+        # 注意：inputs 是 Tensor，不能用 **inputs 解包
         inputs = self.transforms(Image.open(image_path).convert('RGB')).unsqueeze(0).to(DEVICE)
-        feat = self.model(inputs).last_hidden_state.mean(dim=1)
+        outputs = self.model(inputs)
+        
+        if hasattr(outputs, 'pooler_output') and outputs.pooler_output is not None:
+            feat = outputs.pooler_output
+        elif hasattr(outputs, 'last_hidden_state'):
+            if outputs.last_hidden_state.dim() == 3:
+                feat = outputs.last_hidden_state.mean(dim=1)
+            else:
+                feat = outputs.last_hidden_state
+        else:
+            feat = outputs[0]
+            
         return (feat / feat.norm(dim=-1, keepdim=True))[0].cpu().numpy()

@@ -30,11 +30,11 @@ def check_status():
             status += f"   路径: `{p}`\n"
             status += f"   权重: {len(weight_files)} 个文件, 总计 {total_size:.1f} MB\n"
             if k in loaded_models_state:
-                status += f"   状态: 🟢 已加载到显存\n"
+                status += f"   状态:  已加载到显存\n"
             else:
-                status += f"   状态: ⚪ 未加载\n"
+                status += f"   状态:  未加载\n"
         else:
-            status += f" **{v['display_name']}** (`{k}`)\n"
+            status += f"❌ **{v['display_name']}** (`{k}`)\n"
             status += f"   路径: `{p}` (配置文件缺失)\n"
         status += "\n"
     return status
@@ -45,7 +45,7 @@ def load_selected_model(model_key, log_output):
         return "⚠️ 请先选择一个模型", loaded_models_state
     
     if model_key not in MODELS:
-        return f" 未知模型: {model_key}", loaded_models_state
+        return f"❌ 未知模型: {model_key}", loaded_models_state
     
     model_config = MODELS[model_key]
     log_text = f"🔄 正在加载模型: {model_config['display_name']} ({model_key})\n"
@@ -61,7 +61,7 @@ def load_selected_model(model_key, log_output):
         if not os.path.exists(os.path.join(model_config['local_path'], "config.json")):
             raise FileNotFoundError(f"模型配置文件不存在: {model_config['local_path']}")
         
-        log_text += f" 开始加载模型到显存...\n"
+        log_text += f"⏳ 开始加载模型到显存...\n"
         start_time = time.time()
         
         # 加载模型
@@ -77,7 +77,7 @@ def load_selected_model(model_key, log_output):
         }
         
         log_text += f"✅ 模型加载成功！\n"
-        log_text += f"⏱️ 耗时: {elapsed:.2f} 秒\n"
+        log_text += f"️ 耗时: {elapsed:.2f} 秒\n"
         log_text += f" 特征维度: {model_config['feature_dim']}\n"
         log_text += f"💾 显存占用: 已加载到 GPU\n"
         
@@ -91,7 +91,7 @@ def load_selected_model(model_key, log_output):
 def unload_model(model_key, log_output):
     """卸载模型释放显存"""
     if model_key not in loaded_models_state:
-        return f"⚠️ 模型 {model_key} 未加载", loaded_models_state
+        return f"️ 模型 {model_key} 未加载", loaded_models_state
     
     try:
         model_manager.unload_model(model_key)
@@ -102,7 +102,7 @@ def unload_model(model_key, log_output):
         log_text = f"✅ 模型 {model_key} 已卸载，显存已释放"
         return log_text, loaded_models_state
     except Exception as e:
-        return f" 卸载失败: {e}", loaded_models_state
+        return f"❌ 卸载失败: {e}", loaded_models_state
 
 def build_index(image_dir, model_key, progress=gr.Progress()):
     """构建索引（只针对已加载的模型）"""
@@ -124,9 +124,9 @@ def build_index(image_dir, model_key, progress=gr.Progress()):
     
     model_config = MODELS[model_key]
     log_text += f"🔧 开始构建索引\n"
-    log_text += f" 图片目录: {image_dir}\n"
-    log_text += f" 模型: {model_config['display_name']}\n"
-    log_text += f" 特征维度: {model_config['feature_dim']}\n\n"
+    log_text += f"📂 图片目录: {image_dir}\n"
+    log_text += f"🤖 模型: {model_config['display_name']}\n"
+    log_text += f"📏 特征维度: {model_config['feature_dim']}\n\n"
     
     # 扫描图片
     log_text += "🔍 扫描图片文件...\n"
@@ -136,7 +136,7 @@ def build_index(image_dir, model_key, progress=gr.Progress()):
         image_paths.extend(glob.glob(os.path.join(image_dir, ext.upper())))
     
     if not image_paths:
-        return log_text + "⚠️ 未找到支持的图片格式 (jpg, jpeg, png, bmp, webp)"
+        return log_text + "️ 未找到支持的图片格式 (jpg, jpeg, png, bmp, webp)"
     
     log_text += f"✅ 找到 {len(image_paths)} 张图片\n\n"
     
@@ -157,7 +157,7 @@ def build_index(image_dir, model_key, progress=gr.Progress()):
     mgr = FaissIndexManager(model_config["feature_dim"], "cosine")
     
     # 构建索引
-    log_text += "🚀 开始提取特征并构建索引...\n\n"
+    log_text += " 开始提取特征并构建索引...\n\n"
     start_time = time.time()
     failed_count = 0
     
@@ -205,7 +205,7 @@ def list_cached_indices():
     
     log_text = "📂 **已缓存的索引：**\n\n"
     for idx in indices:
-        log_text += f" **{idx['folder_name']}**\n"
+        log_text += f"📁 **{idx['folder_name']}**\n"
         log_text += f"   模型: {idx['model_key']}\n"
         log_text += f"   索引ID: {idx['id']}\n"
         log_text += f"   向量数: {idx['size']} 个\n\n"
@@ -220,7 +220,7 @@ def text_search(query, image_dir, model_key, top_k):
         return [], "⚠️ 请输入搜索文本"
     
     if model_key not in ["clip_en", "clip_zh"]:
-        return [], "️ 文搜图仅支持 CLIP 模型（英文或中文）"
+        return [], "⚠️ 文搜图仅支持 CLIP 模型（英文或中文）"
     
     if model_key not in loaded_models_state:
         return [], f"❌ 模型 {model_key} 未加载，请先加载模型"
@@ -325,7 +325,7 @@ def image_search(query_image, image_dir, model_key, top_k):
                     info_text += f"   路径: {mapping['path']}\n\n"
         
         if not results:
-            return [], info_text + "⚠️ 未找到相似的图片"
+            return [], info_text + "️ 未找到相似的图片"
         
         return results, info_text
         
@@ -335,8 +335,9 @@ def image_search(query_image, image_dir, model_key, top_k):
 
 # ========== Gradio 界面 ==========
 
-with gr.Blocks(title="多模态搜索系统", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("#  多模态图像搜索系统")
+# 注意：Gradio 6.0 中 theme 参数移到了 launch() 方法中
+with gr.Blocks(title="多模态搜索系统") as demo:
+    gr.Markdown("# 🔍 多模态图像搜索系统")
     gr.Markdown("**功能**：支持 CLIP (中英文) + DINO (ViT)")
     
     # 全局日志区域
@@ -347,7 +348,7 @@ with gr.Blocks(title="多模态搜索系统", theme=gr.themes.Soft()) as demo:
     
     with gr.Tabs():
         # ========== 页面1：索引管理 ==========
-        with gr.TabItem("⚙️ 索引管理"):
+        with gr.TabItem("️ 索引管理"):
             gr.Markdown("### 📂 模型加载与索引构建")
             
             with gr.Row():
@@ -377,12 +378,11 @@ with gr.Blocks(title="多模态搜索系统", theme=gr.themes.Soft()) as demo:
                     list_btn = gr.Button("📋 查看缓存索引")
                 
                 with gr.Column(scale=2):
-                    # 详细日志输出
+                    # 详细日志输出 (移除了 show_copy_button=True)
                     log_output = gr.Textbox(
                         label="操作日志",
                         lines=20,
                         max_lines=30,
-                        show_copy_button=True,
                         info="显示详细的操作日志和错误信息"
                     )
             
@@ -439,7 +439,8 @@ with gr.Blocks(title="多模态搜索系统", theme=gr.themes.Soft()) as demo:
                 
                 with gr.Column(scale=2):
                     gallery_text = gr.Gallery(label="搜索结果", columns=3, height=400, object_fit="cover")
-                    info_text = gr.Textbox(label="详细信息", lines=10, show_copy_button=True)
+                    # 移除了 show_copy_button=True
+                    info_text = gr.Textbox(label="详细信息", lines=10)
             
             btn_text_search.click(
                 text_search,
@@ -470,7 +471,8 @@ with gr.Blocks(title="多模态搜索系统", theme=gr.themes.Soft()) as demo:
                 
                 with gr.Column(scale=2):
                     gallery_image = gr.Gallery(label="相似图片", columns=3, height=400, object_fit="cover")
-                    info_image = gr.Textbox(label="详细信息", lines=10, show_copy_button=True)
+                    # 移除了 show_copy_button=True
+                    info_image = gr.Textbox(label="详细信息", lines=10)
             
             btn_image_search.click(
                 image_search,
@@ -482,4 +484,5 @@ with gr.Blocks(title="多模态搜索系统", theme=gr.themes.Soft()) as demo:
     gr.Markdown("💡 **使用提示**：\n1. 先在【索引管理】中选择并加载模型\n2. 构建索引后，索引会自动缓存\n3. 文搜图仅支持 CLIP 模型\n4. 图搜图支持所有模型")
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7862, share=False)
+    # 注意：theme 参数移到了 launch() 方法中
+    demo.launch(server_name="0.0.0.0", server_port=7862, share=False, theme=gr.themes.Soft())
