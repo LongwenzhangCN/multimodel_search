@@ -11,6 +11,9 @@ from config import MODELS, DEFAULT_IMAGE_DIR, CACHE_DIR
 from utils.model_manager import ModelManager
 from unified_search.index_manager import IndexManager
 
+import shutil
+
+
 # 全局状态管理
 model_manager = ModelManager()
 index_manager = IndexManager(CACHE_DIR)
@@ -333,6 +336,124 @@ def image_search(query_image, image_dir, model_key, top_k):
         error_msg = f"❌ 搜索失败:\n{str(e)}\n\n堆栈跟踪:\n{traceback.format_exc()}"
         return [], error_msg
 
+import shutil
+
+def get_unique_filepath(filepath):
+    """处理目标文件夹中的文件名冲突"""
+    if not os.path.exists(filepath):
+        return filepath
+    base, ext = os.path.splitext(filepath)
+    counter = 1
+    while os.path.exists(filepath):
+        filepath = f"{base}_{counter}{ext}"
+        counter += 1
+    return filepath
+
+def deduplicate_images(model_key, source_dir, duplicate_dir, threshold, progress=gr.Progress()):
+    """
+    基于特征相似度的图片去重（支持递归子目录，并保留原有目录结构）
+    """
+    log_text = ""
+    
+    # 1. 验证模型
+    if not model_key:
+        return "⚠️ 请先选择一个模型", []
+    if model_key not in loaded_models_state:
+        return f"❌ 模型 {model_key} 未加载，请先在【索引管理】页面加载模型", []
+    
+    model_config = MODELS[model_key]
+    
+    # 2. 验证目录
+    if not os.path.isdir(source_dir):
+        return f"❌ 源目录不存在: {source_dir}", []
+    
+    os.makedirs(duplicate_dir, exist_ok=True)
+    
+    # 3. 递归扫描图片 (使用 os.walk 支持多层子目录)
+    log_text += f"🔍 正在递归扫描目录: {source_dir}\n"
+    image_paths = []
+    valid_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
+    
+    for root, dirs, files in os.walk(source_dir):
+        for f in files:
+            if os.path.splitext(f)[1].lower() in valid_exts:
+                image_paths.append(os.path.join(root, f))
+    
+    if not image_paths:
+        return "⚠️ 源目录中未找到支持的图片格式", []
+    
+    log_text += f"✅ 共找到 {len(image_paths)} 张图片（包含子目录）\n"
+    log_text += f"🤖 使用模型: {model_config['display_name']}\n"
+    log_text += f"🎯 相似度阈值: {threshold}\n\n"
+    log_text += "⏳ 开始提取特征并去重...\n\n"
+    
+    # 4. 初始化 Faiss 索引
+    from utils.faiss_utils import FaissIndexManager
+    mgr = FaissIndexManager(model_config["feature_dim"], "cosine")
+    encoder = model_manager.get_encoder(model_key)
+    
+    kept_count = 0
+    dup_count = 0
+    error_count = 0
+    
+    start_time = time.time()
+    
+    # 5. 遍历去重
+    for i, img_path in enumerate(image_paths):
+        try:
+            progress((i + 1) / len(image_paths), desc=f"去重处理中: {i+1}/{len(image_paths)}")
+            
+            # 提取特征
+            feat = encoder.encode_image(img_path)
+            
+            if mgr.index.ntotal == 0:
+                # 第一张图片，直接保留
+                mgr.add_vectors([feat], [{"path": img_path, "name": os.path.basename(img_path)}])
+                kept_count += 1
+            else:
+                # 在已保留的图片中搜索最相似的一张 (Top-1)
+                indices, distances = mgr.search(feat, k=1)
+                max_sim = distances[0]
+                
+                if max_sim >= threshold:
+                    # 判定为重复，移动到目标文件夹
+                    # 核心修改：计算相对路径，保持原有的子目录结构
+                    rel_path = os.path.relpath(img_path, source_dir)
+                    target_path = os.path.join(duplicate_dir, rel_path)
+                    
+                    # 处理文件名冲突
+                    target_path = get_unique_filepath(target_path)
+                    
+                    # 创建对应的子目录并移动
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    shutil.move(img_path, target_path)
+                    
+                    dup_count += 1
+                    log_text += f"🗑️ [重复] {rel_path} (相似度: {max_sim:.4f})\n"
+                else:
+                    # 判定为新图片，保留并加入索引
+                    mgr.add_vectors([feat], [{"path": img_path, "name": os.path.basename(img_path)}])
+                    kept_count += 1
+                    
+        except Exception as e:
+            error_count += 1
+            log_text += f"️ [错误] 跳过 {os.path.basename(img_path)}: {str(e)[:50]}...\n"
+            continue
+    
+    elapsed = time.time() - start_time
+    
+    # 6. 生成总结报告
+    log_text += f"\n✅ 去重完成！\n"
+    log_text += f"📊 统计信息:\n"
+    log_text += f"   总图片数: {len(image_paths)}\n"
+    log_text += f"   ✅ 保留 (唯一): {kept_count}\n"
+    log_text += f"   ️ 判定重复并移走: {dup_count}\n"
+    log_text += f"   ⚠️ 处理失败跳过: {error_count}\n"
+    log_text += f"   ️ 总耗时: {elapsed:.2f} 秒\n"
+    log_text += f"   💾 重复图片已保存至: `{duplicate_dir}` (保持原目录结构)\n"
+    
+    return log_text
+
 # ========== Gradio 界面 ==========
 
 # 注意：Gradio 6.0 中 theme 参数移到了 launch() 方法中
@@ -478,6 +599,58 @@ with gr.Blocks(title="多模态搜索系统") as demo:
                 image_search,
                 inputs=[query_image, search_dir_image, image_model_dropdown, top_k_image],
                 outputs=[gallery_image, info_image]
+            )
+
+        # ========== 页面4：图片去重 ==========
+        with gr.TabItem("🧹 图片去重"):
+            gr.Markdown("### 🔍 基于特征相似度的数据集去重")
+            gr.Markdown(
+                "> **原理**：逐张提取图片特征，与已保留的图片进行 Top-1 相似度比对。\n"
+                "> **安全**：重复的图片不会被删除，而是**移动**到您指定的文件夹中，防止误操作。\n"
+                "> **建议阈值**：CLIP 模型建议设为 `0.95` ~ `0.98`；DINO 模型建议设为 `0.90` ~ `0.95`。"
+            )
+            
+            with gr.Row():
+                with gr.Column(scale=1):
+                    dedup_model_dropdown = gr.Dropdown(
+                        choices=[(v["display_name"], k) for k, v in MODELS.items()],
+                        label="选择去重模型",
+                        info="建议使用 CLIP 或 DINOv3-ViT",
+                        value="clip_en" # 默认值可根据您的 config 调整
+                    )
+                    
+                    dedup_source_dir = gr.Textbox(
+                        label="📂 源图片文件夹 (需要去重的目录)",
+                        value=DEFAULT_IMAGE_DIR,
+                        placeholder="/path/to/your/dataset"
+                    )
+                    
+                    dedup_target_dir = gr.Textbox(
+                        label="📁 重复图片存放目录",
+                        value="/root/autodl-tmp/data/duplicates",
+                        placeholder="/path/to/save_duplicates"
+                    )
+                    
+                    dedup_threshold = gr.Slider(
+                        minimum=0.80, maximum=0.99, value=0.95, step=0.01,
+                        label="🎯 相似度阈值 (越高要求越严格)"
+                    )
+                    
+                    dedup_btn = gr.Button("🚀 开始执行去重", variant="primary", elem_classes="danger-btn") # 用红色警示按钮
+                
+                with gr.Column(scale=2):
+                    dedup_log = gr.Textbox(
+                        label="📋 去重日志与统计",
+                        lines=20,
+                        max_lines=30,
+                        info="实时显示处理进度和移动记录"
+                    )
+            
+            # 绑定事件
+            dedup_btn.click(
+                fn=deduplicate_images,
+                inputs=[dedup_model_dropdown, dedup_source_dir, dedup_target_dir, dedup_threshold],
+                outputs=[dedup_log]
             )
     
     gr.Markdown("---")

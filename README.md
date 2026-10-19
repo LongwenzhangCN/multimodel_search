@@ -7,12 +7,13 @@
 ## ✨ 核心特性 (Core Features)
 
 ### 1. 统一向量检索系统 (Unified Vector Search)
-- **多模型支持**：集成 CLIP (中/英文) 与 DINOv2 (ViT)，支持文搜图 (Text-to-Image) 与图搜图 (Image-to-Image)。
+- **多模型支持**：集成 CLIP (中/英文) 与 DINOv2 (ViT)，支持文搜图 (Text-to-Image) 与图搜图 (Image-to-Image) 图像去重等功能。
 - **高效向量检索**：基于 **Faiss** 构建内积索引 (IndexFlatIP)，结合 L2 归一化实现毫秒级余弦相似度搜索。
 - **智能索引缓存**：设计基于“文件夹路径+模型名”哈希的缓存机制，避免重复特征提取，大幅提升二次加载效率。
 - **按需加载架构**：采用动态模型管理器，在 24GB 显存限制下实现多模型的灵活调度与显存释放。
 
 ![alt text](image.png)
+![alt text](image-2.png)
 
 ### 2. Qwen2-VL 智能判别系统 (Intelligent Discrimination)
 - **细粒度视觉推理**：突破传统检索模型的语义局限，支持复杂场景的逻辑判别（如：“镜头是否起雾”、“是否存在特定缺陷”）。
