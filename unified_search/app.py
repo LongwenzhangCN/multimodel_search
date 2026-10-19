@@ -412,7 +412,7 @@ def deduplicate_images(model_key, source_dir, duplicate_dir, threshold, progress
                 kept_count += 1
             else:
                 # 在已保留的图片中搜索最相似的一张 (Top-1)
-                indices, distances = mgr.search(feat, k=1)
+                indices, distances = mgr.search(feat, 1)
                 max_sim = distances[0]
                 
                 if max_sim >= threshold:
